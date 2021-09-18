@@ -9,7 +9,7 @@ initialize plane = Plane(vehicle), so that you can use the object in your own pr
 
 
 """
-from dronekit import connect, VehicleMode, LocationGlobalRelative, Command, Battery, LocationGlobal, Attitude
+from dronekit import connect, VehicleMode, LocationGlobalRelative, Command, Battery, LocationGlobal, Attitude, LocationLocal
 from pymavlink import mavutil
 
 import time
@@ -17,7 +17,10 @@ import math
 import numpy as np 
 import psutil
 import argparse
-import copy    
+import copy
+import datetime
+import threading
+from  threading import *
 
 class Plane():
 
@@ -226,8 +229,9 @@ class Plane():
         self.download_mission()
         #-- save the mission: copy in the memory
         tmp_mission = list(self.mission)
+        print(type(self.mission))
         
-        print (tmp_mission.count)
+        print ("Mission Size: ", len(tmp_mission))
         is_mission  = False
         if len(tmp_mission) >= 1:
             is_mission = True
@@ -290,19 +294,49 @@ class Plane():
             print ("ARMED")
             self.set_ap_mode("AUTO")
             
-            while self.pos_alt_rel <= altitude - 20.0:
+            while self.pos_alt_rel <= altitude - 10.0:
                 print ("Altitude = %.0f"%self.pos_alt_rel)
                 time.sleep(2.0)
-                
+
             print("Altitude reached: set to GUIDED")
             self.set_ap_mode("GUIDED")
+
+            time.sleep(5.0)
             
-            time.sleep(1.0)
-            
-            print("Sending to the home")
-            self.vehicle.simple_goto(self.location_home)
+            self.set_ap_mode("AUTO")
+
             
         return True
+
+    def start_mission(self):
+        """Annie's Code
+            read mission, and start go to each waypoint.
+        """
+        tmp_mission = list(self.mission)
+        if len(tmp_mission) >= 1:
+
+            print("Current mission:")
+            for item in tmp_mission[1:]:
+                print(item)
+                wp = LocationGlobalRelative(item.x, item.y, item.z)
+                self.goto(wp)
+                while not self.check_arrived_waypoint(wp):
+                    print("wait to reach waypoint")
+                    time.sleep(2.0)
+                    #self.goto(wp)
+
+        time.sleep(10.0)
+        print("Finished Mission: RTL")
+        self.set_ap_mode("RTL")
+
+
+
+    def check_arrived_waypoint(self, waypoint):
+        if  0.1 >= abs(self.location_current.lat*139 - waypoint.lat*139) and 0.1 >= abs(self.location_current.lon*111 - waypoint.lon*111):
+            return True
+        else:
+            return False   
+
         
     def get_target_from_bearing(self, original_location, ang, dist, altitude=None):
         """ Create a TGT request packet located at a bearing and distance from the original point
@@ -407,7 +441,25 @@ class Plane():
     def clear_all_rc_override(self):               #--- clears all the rc channel override
         self.vehicle.channels.overrides = {}
             
-            
+    def save_to_file(self):
+        
+        shortDate = datetime.datetime.today().strftime('%Y_%m_%d')   
+        outputFile = "log_output_" + shortDate + ".txt"
+        f = open(outputFile, "a")
+        while self.is_armed():
+            timeNow = str(datetime.datetime.now())
+            f.write(timeNow + " : " + "New Point~~~~~~~~~~~~" + '\n')
+            f.write(timeNow + " : " + "Current X Velocity : " + str(self.vehicle.velocity[0]) + '\n')
+            f.write(timeNow + " : " + "Current Y Velocity : " + str(self.vehicle.velocity[1]) + '\n')
+            f.write(timeNow + " : " + "Current lattitude : " + str(self.pos_lat) + '\n')
+            f.write(timeNow + " : " + "Current longitude : " + str(self.pos_lon) + '\n')
+            #f.write(timeNow + " : " + "last lattitude : " + )
+            #f.write(timeNow + " : " + "last longitude : " + )
+            #f.write(timeNow + " : " + "second to last lattitude : " + )
+            #f.write(timeNow + " : " + "second to last longitude : " + )
+            time.sleep(1.0)
+
+        f.close()
         
     
     

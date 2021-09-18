@@ -11,30 +11,47 @@ import copy
 
 
 if __name__ == '__main__':
-    #parser = argparse.ArgumentParser()
-    #parser.add_argument('--connect', default='tcp:127.0.0.1:5762')
-    #args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--connect', default='tcp:127.0.0.1:5762')
+    args = parser.parse_args()
     
-    #connection_string = args.connect
-
-    connection_string = '/dev/ttyACM0'	#Establishing Connection With PIXHAWK
+    connection_string = args.connect
+    #connection_string = '/dev/ttyACM0'	#Establishing Connection With PIXHAWK  
     
     #-- Create the object
     plane = Plane(connection_string)
 
     #Download Mission
-    cmds = plane.commands
-    cmds.download()
-    cmds.wait_ready() 
+    #plane.download_mission()
     
     #-- Arm and takeoff
     if not plane.is_armed(): plane.arm_and_takeoff()
 
+    
+    time.sleep(5)
+    
+    plane.start_mission()
+
     time.sleep(5)
 
-    threading.Thread(target = plane.save_to_file()).start()
+    
+    if plane.get_ap_mode() == "RTL":
+        while not plane.check_arrived_waypoint(plane.location_home):
+            pass
+        
+        print("Disarm!!")
+        plane.disarm()
 
     '''
+    if  plane.is_armed():
+        print("Disarm")
+        plane.disarm()
+    
+    
+    #print("Land")
+    #plane.land()
+    
+    
     #-- Set in fbwb and test the rc override
     plane.set_ap_mode("FBWB")
     time.sleep(3.0)
@@ -57,4 +74,4 @@ if __name__ == '__main__':
         plane.set_ground_course(cruise_angle_deg, cruise_altitude)
         time.sleep(5)
         cruise_angle_deg    += delta_angle_deg
-    '''
+    '''    

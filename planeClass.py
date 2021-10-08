@@ -21,6 +21,19 @@ import copy
 import datetime
 import threading
 from  threading import *
+import serial
+
+#setting up xbee communication
+
+ser = serial.Serial(
+    
+    port='COMUSB0',
+    baudrate = 9600,
+    parity=serial.PARITY_NONE,
+    stopbits=serial.STOPBITS_ONE,
+    bytesize=serial.EIGHTBITS,
+    timeout=1   
+)
 
 class Plane():
 
@@ -294,48 +307,45 @@ class Plane():
             print ("ARMED")
             self.set_ap_mode("AUTO")
             
-            while self.pos_alt_rel <= altitude - 10.0:
+            while self.pos_alt_rel <= altitude:# - 10.0:
                 print ("Altitude = %.0f"%self.pos_alt_rel)
-                time.sleep(2.0)
+                time.sleep(0.5)
 
-            print("Altitude reached: set to GUIDED")
-            self.set_ap_mode("GUIDED")
+            #print("Altitude reached: set to GUIDED")
+            #self.set_ap_mode("GUIDED")
 
-            time.sleep(5.0)
+            #time.sleep(5.0)
             
-            self.set_ap_mode("AUTO")
+            #print("Set to AUTO")
+            #self.set_ap_mode("AUTO")
 
             
         return True
+    
+    def current_WP_number(self):
+        return self.vehicle.commands.next
 
-    def start_mission(self):
+
+    def insert_avoidWP(self,currentWP_index, avoidWP):
         """Annie's Code
-            read mission, and start go to each waypoint.
-        """
-        tmp_mission = list(self.mission)
-        if len(tmp_mission) >= 1:
+            insert avoid wp into mission list and upload to vehicle
+       """
+        #CMD mission to list
+        missionlist=list(self.mission)
 
-            print("Current mission:")
-            for item in tmp_mission[1:]:
-                print(item)
-                wp = LocationGlobalRelative(item.x, item.y, item.z)
-                self.goto(wp)
-                while not self.check_arrived_waypoint(wp):
-                    print("wait to reach waypoint")
-                    time.sleep(2.0)
-                    #self.goto(wp)
+        #create cmd wapoint
+        newCMD=Command( 0, 0, 0, mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0, 0, 0, avoidWP[0], avoidWP[1], avoidWP[2])
 
-        time.sleep(10.0)
-        print("Finished Mission: RTL")
-        self.set_ap_mode("RTL")
+        #insert avoid wp to list
+        missionlist.insert(currentWP_index,newCMD)
 
+        # Clear the current mission (command is sent when we call upload())
+        self.mission.clear()
 
-
-    def check_arrived_waypoint(self, waypoint):
-        if  0.1 >= abs(self.location_current.lat*139 - waypoint.lat*139) and 0.1 >= abs(self.location_current.lon*111 - waypoint.lon*111):
-            return True
-        else:
-            return False   
+        #Write the modified mission and flush to the vehicle
+        for cmd in missionlist:
+            self.mission.add(cmd)
+        self.mission.upload()
 
         
     def get_target_from_bearing(self, original_location, ang, dist, altitude=None):
@@ -446,21 +456,92 @@ class Plane():
         shortDate = datetime.datetime.today().strftime('%Y_%m_%d')   
         outputFile = "log_output_" + shortDate + ".txt"
         f = open(outputFile, "a")
+        
+        lastGPS = [0,0]
+        secondTolastGPS = [0,0]
+            
         while self.is_armed():
             timeNow = str(datetime.datetime.now())
-            f.write(timeNow + " : " + "New Point~~~~~~~~~~~~" + '\n')
+            f.write(timeNow + " : " + "~~~~~~~~~~New Point~~~~~~~~~~~~" + '\n')
+            f.write(timeNow + " : " + "Current Airspped : " + str(self.airspeed) + '\n')
             f.write(timeNow + " : " + "Current X Velocity : " + str(self.vehicle.velocity[0]) + '\n')
             f.write(timeNow + " : " + "Current Y Velocity : " + str(self.vehicle.velocity[1]) + '\n')
             f.write(timeNow + " : " + "Current lattitude : " + str(self.pos_lat) + '\n')
             f.write(timeNow + " : " + "Current longitude : " + str(self.pos_lon) + '\n')
-            #f.write(timeNow + " : " + "last lattitude : " + )
-            #f.write(timeNow + " : " + "last longitude : " + )
-            #f.write(timeNow + " : " + "second to last lattitude : " + )
-            #f.write(timeNow + " : " + "second to last longitude : " + )
+            f.write(timeNow + " : " + "last lattitude : " + str(lastGPS[0]) + '\n')
+            f.write(timeNow + " : " + "last longitude : " + str(lastGPS[1]) + '\n')
+            f.write(timeNow + " : " + "second to last lattitude : " + str(secondTolastGPS[0]) + '\n')
+            f.write(timeNow + " : " + "second to last longitude : " + str(secondTolastGPS[1]) + '\n')
+
+            secondTolastGPS = [lastGPS[0],lastGPS[0]]
+            lastGPS = [self.pos_lat,self.pos_lon]
+
+            timestep = 1
+            for i in range(10):    
+                f.write(timeNow + " : " + "Timestamp" + str(i) + '\n')    
+                futurePosX = self.getFuturePosition(self.pos_lat*139, self.vehicle.velocity[0], timestep)
+                futurePosY = self.getFuturePosition(self.pos_lon*111, self.vehicle.velocity[1], timestep)
+                f.write(timeNow + " : " + "futurePosX : " + str((futurePosX/1000)/139) + '\n')
+                f.write(timeNow + " : " + "futurePosY : " + str((futurePosY/1000)/111) + '\n')
+
+                timestep = timestep + 0.5
+            
+            
+            
             time.sleep(1.0)
 
         f.close()
+
+    def getFuturePosition(self, PosX,VelX,time):
+        futurePosX = PosX*1000 + VelX * time
+        #futurePosY = PosY*1000 + VelY * time
+        #futurePosZ = PosZ + VelZ * time
+        return futurePosX
+
+    def send_ADSB_data(self):
         
+        print("In send ADSB funtion\n")
+        #msg = "In send ADSB funtion\n"
+        #ser.write(msg.encode())
+        while True: 
+            '''
+            lat = self.pos_lat
+            lon = self.pos_lon
+            alt = self.pos_alt_rel
+            velocity = self.vehicle.velocity
+            airspeed = self.airspeed
+            '''
+
+            msg = "Lattitude: " + str(self.pos_lat) + '\n'
+            msg += "Longitude: " + str(self.pos_lon) + '\n'
+            msg += "Altitude: " + str(self.pos_alt_rel) + '\n'
+            msg += "Velocity: " + str(self.vehicle.velocity) + '\n'
+            msg += "Airspeed: " + str(self.airspeed) + '\n'
+            
+            '''
+            print("Lattitude: " + str(self.pos_lat) + '\n')
+            print("Longitude: " + str(self.pos_lon) + '\n')
+            print("Altitude: " + str(self.pos_alt_rel) + '\n')
+            print("Velocity: " + str(self.vehicle.velocity) + '\n')
+            print("Airspeed: " + str(self.airspeed) + '\n')
+            '''
+            #Send out ADSB data
+            ser.write(msg.encode())
+            time.sleep(10.0)
     
-    
-      
+    def run(self):
+        t1 = threading.Thread(target=self.save_to_file, daemon=True)
+        t2 = threading.Thread(target=self.send_ADSB_data, daemon=True)
+        #t1.daemon = True
+        #t2.daemon = True
+        
+        t1.setDaemon(True)
+        t2.setDaemon(True)
+        #print("t1", t1.isDaemon())
+        #print("t2", t2.isDaemon())
+        t1.start()
+        t2.start()
+        
+
+        #return t1, t2
+  

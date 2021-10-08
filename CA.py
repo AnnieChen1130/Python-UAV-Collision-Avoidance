@@ -21,18 +21,22 @@ if __name__ == '__main__':
     
     #-- Create the object
     plane = Plane(connection_string)
+    altitude = 30
 
-    #Download Mission
-    cmds = plane.commands
-    cmds.download()
-    cmds.wait_ready() 
+    if not plane.is_armed(): plane.arm_and_takeoff(altitude)
+
+    avoidWP = [33.9875841, -117.9110992, altitude]
+
+    while plane.is_armed():
+        plane.run()
+
+        if(plane.current_WP_number() == 4):
+            plane.insert_avoidWP(plane.current_WP_number(), avoidWP)
+            print("current_WP_number: ", plane.current_WP_number())
+            time.sleep(1)
+        print("current_WP_number: ", plane.current_WP_number())   
+        time.sleep(1)
     
-    #-- Arm and takeoff
-    if not plane.is_armed(): plane.arm_and_takeoff()
-
-    time.sleep(5)
-
-    threading.Thread(target = plane.save_to_file()).start()
 
     '''
     #-- Set in fbwb and test the rc override

@@ -27,7 +27,7 @@ import serial
 
 ser = serial.Serial(
     
-    port='COM9',
+    port='COM5',
     baudrate = 9600,
     parity=serial.PARITY_NONE,
     stopbits=serial.STOPBITS_ONE,
@@ -88,6 +88,13 @@ class Plane():
         
         self.location_home      = LocationGlobalRelative(0,0,0) #- LocationRelative type home
         self.location_current   = LocationGlobalRelative(0,0,0) #- LocationRelative type current position
+
+        # Received information from partner XBee
+        self.receive_lattitude = 0.0        #- [deg]    latitude
+        self.receive_longitude = 0.0        #- [deg]    longitude
+        self.receive_altitude = 0.0         #- [m]      altitude
+        self.receive_velocity = []         #- [m/s]    velocity of craft
+        self.receive_airspeed = 0.0         #- [m/s]    airspeed
         
     def _connect(self, connection_string):      #-- (private) Connect to Vehicle
         """ (private) connect with the autopilot
@@ -454,7 +461,18 @@ class Plane():
         self.vehicle.channels.overrides = {}
 
     def prediction(self):
-        times = 0        
+
+        while True:
+            print('***** PREDICTION *****')
+            print(self.receive_lattitude)
+            print(self.receive_longitude)
+            
+            if self.pos_lat == self.receive_lattitude and self.pos_lon == self.receive_longitude:
+                print("Collision detected.")
+            
+            time.sleep(3)
+
+        '''times = 0        
         distX = 0
         distY = 0
         distZ = 0
@@ -544,7 +562,7 @@ class Plane():
                     print("************************************************************")
                     vehicle_1.avoid(v2posX, posX, v2posY, posY, posZ)
  
-            time.sleep(5)
+            time.sleep(5)'''
 
 
     def save_to_file(self):
@@ -559,18 +577,25 @@ class Plane():
         while self.is_armed():
             timeNow = str(datetime.datetime.now())
             f.write(timeNow + " : " + "~~~~~~~~~~New Point~~~~~~~~~~~~" + '\n')
-            f.write(timeNow + " : " + "Current Airspped : " + str(self.airspeed) + '\n')
+           # f.write(timeNow + " : " + "Current Airspped : " + str(self.airspeed) + '\n')
             f.write(timeNow + " : " + "Current X Velocity : " + str(self.vehicle.velocity[0]) + '\n')
             f.write(timeNow + " : " + "Current Y Velocity : " + str(self.vehicle.velocity[1]) + '\n')
             f.write(timeNow + " : " + "Current lattitude : " + str(self.pos_lat) + '\n')
             f.write(timeNow + " : " + "Current longitude : " + str(self.pos_lon) + '\n')
-            f.write(timeNow + " : " + "last lattitude : " + str(lastGPS[0]) + '\n')
-            f.write(timeNow + " : " + "last longitude : " + str(lastGPS[1]) + '\n')
-            f.write(timeNow + " : " + "second to last lattitude : " + str(secondTolastGPS[0]) + '\n')
-            f.write(timeNow + " : " + "second to last longitude : " + str(secondTolastGPS[1]) + '\n')
+            # f.write(timeNow + " : " + "last lattitude : " + str(lastGPS[0]) + '\n')
+            # f.write(timeNow + " : " + "last longitude : " + str(lastGPS[1]) + '\n')
+            # f.write(timeNow + " : " + "second to last lattitude : " + str(secondTolastGPS[0]) + '\n')
+            # f.write(timeNow + " : " + "second to last longitude : " + str(secondTolastGPS[1]) + '\n')
 
-            secondTolastGPS = [lastGPS[0],lastGPS[0]]
-            lastGPS = [self.pos_lat,self.pos_lon]
+            #f.write(timeNow + " : " + "Current Airspped : " + str(self.airspeed) + '\n')
+            f.write(timeNow + " : " + "Intruder X Velocity : " + str(self.receive_velocity[0]) + '\n')
+            f.write(timeNow + " : " + "Intruder Y Velocity : " + str(self.receive_velocity[1]) + '\n')
+            f.write(timeNow + " : " + "Intruder lattitude : " + str(self.receive_lattitude) + '\n')
+            f.write(timeNow + " : " + "Intruder longitude : " + str(self.receive_longitude) + '\n')
+
+
+            #secondTolastGPS = [lastGPS[0],lastGPS[0]]
+            #lastGPS = [self.pos_lat,self.pos_lon]
 
             timestep = 1
             for i in range(10):    
@@ -601,7 +626,7 @@ class Plane():
         #ser.write(msg.encode())
         while True: 
 
-            msg = "ICAO: SIM\n"
+            msg = "ICAO: REBECCA\n"
             msg += "Lattitude: " + str(self.pos_lat) + '\n'
             msg += "Longitude: " + str(self.pos_lon) + '\n'
             msg += "Altitude: " + str(self.pos_alt_rel) + '\n'
@@ -614,10 +639,39 @@ class Plane():
             time.sleep(5.0)
     
     def receive_ADSB_data(self):
-        print("In receive_ADSB_data function")
         while True:    
-            msg = ser.readline().decode()
+            print("In receive_ADSB_data function")
+            msg = ser.read().decode()
             print(msg)
+
+            while not msg:
+                print('waiting')
+                time.sleep(1)
+                msg = ser.readline().decode()
+                print(msg)
+                
+
+            # Variable Saving
+            #lst_msg = msg.split("\n")
+            lst_msg = msg.split(";")
+
+            #print(lst_msg)
+            #print(lst_msg[1].split(': '))
+
+            self.receive_lattitude = float((lst_msg[1].split(': '))[-1])
+            self.receive_longitude = float((lst_msg[2].split(': '))[-1])
+            self.receive_altitude = float((lst_msg[3].split(': '))[-1])
+            temp = (lst_msg[4].split(': '))[-1]
+            self.receive_velocity = temp.strip('][').split(', ')
+            for value in range(len(self.receive_velocity)):
+                self.receive_velocity[value] = float(self.receive_velocity[value])
+            self.receive_airspeed = float((lst_msg[5].split(': '))[-1])
+
+            print(self.receive_lattitude)
+            print(self.receive_longitude)
+            print(self.receive_velocity)
+            # Variable Saving end
+
             time.sleep(0.1)
 
 
@@ -627,10 +681,12 @@ class Plane():
         t1 = threading.Thread(target=self.save_to_file, daemon=True)
         t2 = threading.Thread(target=self.send_ADSB_data, daemon=True)
         t3 = threading.Thread(target=self.receive_ADSB_data, daemon=True)
+        t4 = threading.Thread(target=self.prediction, daemon=True)
 
         t1.start()
         t2.start()
         t3.start()
+        t4.start()
 
         
   
